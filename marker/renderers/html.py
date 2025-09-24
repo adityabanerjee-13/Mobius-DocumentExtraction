@@ -1,11 +1,15 @@
 import textwrap
 
+import base64
+import io
 from PIL import Image
 from typing import Annotated, Tuple
 
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from pydantic import BaseModel
 
+from marker.schema.document import Document
+from marker.schema.blocks import Block, BlockId, BlockOutput
 from marker.renderers import BaseRenderer
 from marker.schema import BlockTypes
 from marker.schema.blocks import BlockId
@@ -40,11 +44,22 @@ class HTMLRenderer(BaseRenderer):
         "Whether to paginate the output.",
     ] = False
 
-    def extract_image(self, document, image_id):
+    def extract_image(self, document: Document, image_id: BlockId, to_base64: bool = False) -> Image.Image:
         image_block = document.get_block(image_id)
         cropped = image_block.get_image(
             document, highres=self.image_extraction_mode == "highres"
         )
+        
+        if to_base64:
+            image_buffer = io.BytesIO()
+            # RGBA to RGB
+            if not cropped.mode == "RGB":
+                cropped = cropped.convert("RGB")
+
+            cropped.save(image_buffer, format=settings.OUTPUT_IMAGE_FORMAT)
+            cropped = base64.b64encode(image_buffer.getvalue()).decode(
+                settings.OUTPUT_ENCODING
+            )
         return cropped
 
     def insert_block_id(self, soup, block_id: BlockId):
@@ -78,6 +93,50 @@ class HTMLRenderer(BaseRenderer):
                 soup.append(wrapper)
         return soup
 
+    def extract_page_html(self, document, page_output):
+        soup = BeautifulSoup(page_output.html, "html.parser")
+        content_refs = soup.find_all("content-ref")
+        ref_block_id = None
+        images = {}
+
+        for ref in content_refs:
+            src = ref.get("src")
+            sub_images = {}
+            content = ""
+            for item in page_output.children:
+                if item.id == src:
+                    content, sub_images_ = self.extract_html(document, item, level=1)
+                    sub_images.update(sub_images_)
+                    ref_block_id: BlockId = item.id
+                    break
+
+            if ref_block_id.block_type in self.image_blocks:
+                if self.extract_images:
+                    image = self.extract_image(document, ref_block_id, to_base64=True)
+                    image_name = f"{ref_block_id.to_path()}.{settings.OUTPUT_IMAGE_FORMAT.lower()}"
+                    images[image_name] = image
+                    element = BeautifulSoup(
+                        f"<p>{content}<img src='{image_name}'></p>", "html.parser"
+                    )
+                    ref.replace_with(self.insert_block_id(element, ref_block_id))
+                else:
+                    # This will be the image description if using llm mode, or empty if not
+                    element = BeautifulSoup(f"{content}", "html.parser")
+                    ref.replace_with(self.insert_block_id(element, ref_block_id))
+            elif ref_block_id.block_type in self.page_blocks:
+                images.update(sub_images)
+                if self.paginate_output:
+                    content = f"<div class='page' data-page-id='{ref_block_id.page_id}'>{content}</div>"
+                element = BeautifulSoup(f"{content}", "html.parser")
+                ref.replace_with(self.insert_block_id(element, ref_block_id))
+            else:
+                images.update(sub_images)
+                element = BeautifulSoup(f"{content}", "html.parser")
+                ref.replace_with(self.insert_block_id(element, ref_block_id))
+
+        output = str(soup)
+        return output, images
+
     def extract_html(self, document, document_output, level=0):
         soup = BeautifulSoup(document_output.html, "html.parser")
 
@@ -97,7 +156,7 @@ class HTMLRenderer(BaseRenderer):
 
             if ref_block_id.block_type in self.image_blocks:
                 if self.extract_images:
-                    image = self.extract_image(document, ref_block_id)
+                    image = self.extract_image(document, ref_block_id, to_base64=True)
                     image_name = f"{ref_block_id.to_path()}.{settings.OUTPUT_IMAGE_FORMAT.lower()}"
                     images[image_name] = image
                     element = BeautifulSoup(

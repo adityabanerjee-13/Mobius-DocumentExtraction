@@ -12,6 +12,7 @@ from marker.processors import BaseProcessor
 from marker.services import BaseService
 from marker.processors.llm.llm_table_merge import LLMTableMergeProcessor
 from marker.providers.registry import provider_from_filepath
+from marker.renderers.chunk import ChunkRenderer
 from marker.builders.document import DocumentBuilder
 from marker.builders.layout import LayoutBuilder
 from marker.builders.line import LineBuilder
@@ -39,7 +40,10 @@ from marker.processors.text import TextProcessor
 from marker.processors.block_relabel import BlockRelabelProcessor
 from marker.processors.blank_page import BlankPageProcessor
 from marker.processors.llm.llm_equation import LLMEquationProcessor
-from marker.renderers.markdown import MarkdownRenderer
+from marker.renderers.page_markdown import PageMarkdownRenderer
+from marker.renderers.markdown import cleanup_text
+from marker.renderers import BaseRenderer
+from marker.schema.document import Document
 from marker.schema import BlockTypes
 from marker.schema.blocks import Block
 from marker.schema.registry import register_block_class
@@ -51,6 +55,23 @@ from marker.processors.line_merge import LineMergeProcessor
 from marker.processors.llm.llm_mathblock import LLMMathBlockProcessor
 from marker.processors.llm.llm_page_correction import LLMPageCorrectionProcessor
 from marker.processors.llm.llm_sectionheader import LLMSectionHeaderProcessor
+
+
+
+def renderer2cls(name: str) -> Optional[str|List[str]]:
+    if renderer == 'pageMarkdown':
+        renderer = 'marker.renderers.page_markdown.PageMarkdownRenderer'
+    elif renderer == 'markdown':
+        renderer = 'marker.renderers.markdown.MarkdownRenderer'
+    elif renderer == 'chunks':
+        renderer = 'marker.renderers.chunk.ChunkRenderer'
+    elif '+' in renderer:
+        renderers = renderer.split('+')
+        renderers = [r.strip() for r in renderers]
+        renderers = [renderer2cls(r) for r in renderers]
+    else:
+        renderer = None
+
 
 
 class PdfConverter(BaseConverter):
@@ -105,10 +126,20 @@ class PdfConverter(BaseConverter):
         self,
         artifact_dict: Dict[str, Any],
         processor_list: Optional[List[str]] = None,
-        renderer: str | None = None,
-        llm_service: str | None = None,
         config=None,
     ):
+        
+        renderer = config.get("renderer", None)
+        renderer = renderer2cls(renderer)
+        # remove renderer from config to avoid issues in other places
+        if "renderer" in config:
+            config.pop("renderer")
+        
+        llm_service = config.get("llm_service", None)
+        # remove llm_service from config to avoid issues in other places
+        if "llm_service" in config:
+            config.pop("llm_service")
+
         super().__init__(config)
 
         if config is None:
@@ -129,9 +160,9 @@ class PdfConverter(BaseConverter):
             processor_list = self.default_processors
 
         if renderer:
-            renderer = strings_to_classes([renderer])[0]
+            renderer = strings_to_classes([renderer] if isinstance(renderer, str) else renderer)
         else:
-            renderer = MarkdownRenderer
+            renderer = [PageMarkdownRenderer, ChunkRenderer]
 
         # Put here so that resolve_dependencies can access it
         self.artifact_dict = artifact_dict
@@ -193,6 +224,49 @@ class PdfConverter(BaseConverter):
             processor(document)
 
         return document
+
+    def render(self, renderer_cls: Type[BaseRenderer], document: Document) -> Tuple[str, Any, Dict[str, Any]]:
+        renderer = self.resolve_dependencies(renderer_cls)
+        if renderer_cls.__name__ == "PageMarkdownRenderer":
+            page_output, images, metadata = renderer(document)
+            return "page_renders", page_output, images, metadata
+
+        elif renderer_cls.__name__ == "ChunkRenderer":
+            json_output, images, metadata = renderer(document)
+            return "chunks", json_output, images, metadata
+
+        elif renderer_cls.__name__ == "MarkdownRenderer":
+            rendered, images, metadata = renderer(document)
+            if isinstance(rendered, str):
+                rendered = cleanup_text(rendered)
+            return "markdown", rendered, images, metadata
+
+    def render_document(self, document: Document) -> Dict[str, Any]:
+        out_render = {}
+        out_render['page_structure'] = {}
+        for i, doc_child in enumerate(document.pages):
+            if doc_child.ignore_for_output:
+                out_render['page_structure'][doc_child.page_id] = []
+            else:
+                out_render['page_structure'][doc_child.page_id] = [str(identity) for identity in doc_child.structure]
+
+        if isinstance(self.renderer, list):
+            for j, renderer_cls in enumerate(self.renderer):
+                key, rendered, images, metadata = self.render(renderer_cls, document)
+                out_render[key] = rendered
+                out_render['images'] = images
+            out_render['metadata'] = metadata
+
+        elif issubclass(self.renderer, BaseRenderer):
+            key, rendered, images, metadata = self.render(self.renderer, document)
+            out_render[key] = rendered
+            out_render['metadata'] = metadata
+            out_render['images'] = images
+
+        else:
+            raise ValueError("Renderer must be a BaseRenderer subclass or a list of BaseRenderer subclasses.")
+
+        return out_render
 
     def __call__(self, filepath: str | io.BytesIO):
         with self.filepath_to_str(filepath) as temp_path:

@@ -57,7 +57,6 @@ class DocumentBuilder(BaseBuilder):
                     if block.block_type == BlockTypes.TableOfContents:
                         page.ignore_for_output = True
                     break
-        
         # Ignore blocks
         for page in (pages):
             if page.ignore_for_output:
@@ -77,7 +76,5 @@ class DocumentBuilder(BaseBuilder):
                 refs=provider.get_page_refs(p)
             ) for i, p in enumerate(provider.page_range)
         ]
-        for page in initial_pages:
-            (page)
         DocumentClass: Document = get_block_class(BlockTypes.Document)
         return DocumentClass(filepath=provider.filepath, pages=initial_pages)

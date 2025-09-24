@@ -141,7 +141,8 @@ class BaseRenderer:
                     break
 
             if ref_block_id.block_type in self.image_blocks and self.extract_images:
-                images[ref_block_id] = self.extract_image(
+                image_name = f"{ref_block_id.to_path()}.{settings.OUTPUT_IMAGE_FORMAT.lower()}"
+                images[image_name] = self.extract_image(
                     document, ref_block_id, to_base64=True
                 )
             else:
@@ -149,7 +150,8 @@ class BaseRenderer:
                 ref.replace_with(BeautifulSoup(content, "html.parser"))
 
         if block_output.id.block_type in self.image_blocks and self.extract_images:
-            images[block_output.id] = self.extract_image(
+            image_name = f"{block_output.id.to_path()}.{settings.OUTPUT_IMAGE_FORMAT.lower()}"
+            images[image_name] = self.extract_image(
                 document, block_output.id, to_base64=True
             )
 

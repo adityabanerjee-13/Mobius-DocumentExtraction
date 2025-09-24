@@ -1,11 +1,12 @@
 import html
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 from marker.renderers.json import JSONRenderer, JSONBlockOutput
 from marker.schema.document import Document
+from marker.settings import settings
 
 
 class FlatBlockOutput(BaseModel):
@@ -35,8 +36,10 @@ def collect_images(block: JSONBlockOutput) -> dict[str, str]:
 
 def assemble_html_with_images(block: JSONBlockOutput, image_blocks: set[str]) -> str:
     if not getattr(block, "children", None):
+        block_path = (block.id).replace('/', '_')
+        image_name = f"{block_path}.{settings.OUTPUT_IMAGE_FORMAT.lower()}"
         if block.block_type in image_blocks:
-            return f"<p>{block.html}<img src='{block.id}'></p>"
+            return f"<p>{block.html}<img src='{image_name}'></p>"
         else:
             return block.html
 
@@ -72,8 +75,7 @@ def json_to_chunks(
 
 
 class ChunkRenderer(JSONRenderer):
-
-    def __call__(self, document: Document) -> ChunkOutput:
+    def __call__(self, document: Document) -> Optional[ChunkOutput|Dict[str, dict]]:
         document_output = document.render(self.block_config)
         json_output = []
         for page_output in document_output.children:
@@ -84,14 +86,26 @@ class ChunkRenderer(JSONRenderer):
         for item in json_output:
             chunks = json_to_chunks(item, set([str(block) for block in self.image_blocks]))
             chunk_output.extend(chunks)
-
         page_info = {
             page.page_id: {"bbox": page.polygon.bbox, "polygon": page.polygon.polygon}
             for page in document.pages
         }
+        out = {
+            "blocks": [chunk.model_dump() for chunk in chunk_output],
+            "page_info": page_info,
+        }
+        temp = {}
+        temp_imgs = {}
 
-        return ChunkOutput(
-            blocks=chunk_output,
-            page_info=page_info,
-            metadata=self.generate_document_metadata(document, document_output),
-        )
+        for block in out['blocks']:
+            temp_id = str(block['id']).split('/')
+            temp[str(block['id'])] = {
+                'block_type': temp_id[2],
+                'page': int(temp_id[-1]),
+                'html': block['html'],
+                'bbox': block['bbox'],
+            }
+            temp_imgs.update(block['images'] if block['images'] else {})
+        
+
+        return temp, temp_imgs, self.generate_document_metadata(document, document_output)

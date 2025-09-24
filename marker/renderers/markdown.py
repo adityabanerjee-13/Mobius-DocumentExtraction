@@ -71,6 +71,9 @@ class Markdownify(MarkdownConverter):
         self.block_math_delimiters = block_math_delimiters
 
     def convert_div(self, el, text, parent_tags):
+        '''
+        Handle pagination markers for divs with class "page".
+        '''
         is_page = el.has_attr("class") and el["class"][0] == "page"
         if self.paginate_output and is_page:
             page_id = el["data-page-id"]
@@ -82,6 +85,9 @@ class Markdownify(MarkdownConverter):
             return text
 
     def convert_p(self, el, text, parent_tags):
+        '''
+        Handle continuation markers for paragraphs.
+        '''
         hyphens = r"-—¬"
         has_continuation = el.has_attr("class") and "has-continuation" in el["class"]
         if has_continuation:
@@ -299,8 +305,10 @@ class MarkdownRenderer(HTMLRenderer):
             if markdown.endswith(self.page_separator):
                 markdown += "\n\n"
 
-        return MarkdownOutput(
+        out = MarkdownOutput(
             markdown=markdown,
             images=images,
             metadata=self.generate_document_metadata(document, document_output),
-        )
+        ).model_dump()
+
+        return out.get("markdown"), out.get("images"), out.get("metadata")
