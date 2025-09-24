@@ -58,7 +58,7 @@ from marker.processors.llm.llm_sectionheader import LLMSectionHeaderProcessor
 
 
 
-def renderer2cls(name: str) -> Optional[str|List[str]]:
+def renderer2cls_loc(renderer: str) -> Optional[str|List[str]]:
     if renderer == 'pageMarkdown':
         renderer = 'marker.renderers.page_markdown.PageMarkdownRenderer'
     elif renderer == 'markdown':
@@ -67,11 +67,10 @@ def renderer2cls(name: str) -> Optional[str|List[str]]:
         renderer = 'marker.renderers.chunk.ChunkRenderer'
     elif '+' in renderer:
         renderers = renderer.split('+')
-        renderers = [r.strip() for r in renderers]
-        renderers = [renderer2cls(r) for r in renderers]
+        renderer = [renderer2cls_loc(r.strip()) for r in renderers]
     else:
         renderer = None
-
+    return renderer
 
 
 class PdfConverter(BaseConverter):
@@ -130,7 +129,7 @@ class PdfConverter(BaseConverter):
     ):
         
         renderer = config.get("renderer", None)
-        renderer = renderer2cls(renderer)
+        renderer = renderer2cls_loc(renderer)
         # remove renderer from config to avoid issues in other places
         if "renderer" in config:
             config.pop("renderer")
