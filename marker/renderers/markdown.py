@@ -309,6 +309,10 @@ class MarkdownRenderer(HTMLRenderer):
             markdown=markdown,
             images=images,
             metadata=self.generate_document_metadata(document, document_output),
-        ).model_dump()
+        )
 
-        return out.get("markdown"), out.get("images"), out.get("metadata")
+        if self.output_json:
+            out = out.model_dump()
+            return out.get("markdown"), out.get("images"), out.get("metadata")
+
+        return out

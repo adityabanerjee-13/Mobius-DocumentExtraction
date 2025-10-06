@@ -89,13 +89,13 @@ class PdfConverter(BaseConverter):
         bool,
         "Enable higher quality processing with LLMs.",
     ] = False
+    
     default_processors: Tuple[BaseProcessor, ...] = (
         OrderProcessor,
         BlockRelabelProcessor,
         LineMergeProcessor,
         BlockquoteProcessor,
         CodeProcessor,
-        DocumentTOCProcessor,
         EquationProcessor,
         FootnoteProcessor,
         IgnoreTextProcessor,
@@ -103,18 +103,19 @@ class PdfConverter(BaseConverter):
         ListProcessor,
         PageHeaderProcessor,
         SectionHeaderProcessor,
+        DocumentTOCProcessor,
         TableProcessor,
-        LLMTableProcessor,
-        LLMTableMergeProcessor,
-        LLMFormProcessor,
+        # LLMTableProcessor,
+        # LLMTableMergeProcessor,
+        # LLMFormProcessor,
         TextProcessor,
-        LLMComplexRegionProcessor,
-        LLMImageDescriptionProcessor,
-        LLMEquationProcessor,
-        LLMHandwritingProcessor,
-        LLMMathBlockProcessor,
+        # LLMComplexRegionProcessor,
+        # LLMImageDescriptionProcessor,
+        # LLMEquationProcessor,
+        # LLMHandwritingProcessor,
+        # LLMMathBlockProcessor,
         LLMSectionHeaderProcessor,
-        LLMPageCorrectionProcessor,
+        # LLMPageCorrectionProcessor,
         ReferenceProcessor,
         BlankPageProcessor,
         DebugProcessor,
@@ -271,6 +272,5 @@ class PdfConverter(BaseConverter):
         with self.filepath_to_str(filepath) as temp_path:
             document = self.build_document(temp_path)
             self.page_count = len(document.pages)
-            renderer = self.resolve_dependencies(self.renderer)
-            rendered = renderer(document)
-        return rendered
+            out_render = self.render_document(document)
+        return out_render

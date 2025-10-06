@@ -17,7 +17,7 @@ class OllamaService(BaseService):
         str, "The base url to use for ollama.  No trailing slash."
     ] = "http://localhost:11434"
     ollama_model: Annotated[str, "The model name to use for ollama."] = (
-        "llama3.2-vision"
+        "llama3.2:latest"
     )
 
     def process_images(self, images):
@@ -56,16 +56,17 @@ class OllamaService(BaseService):
         try:
             print(f"Ollama payload: {json.dumps(payload)}")
             response = requests.post(url, json=(payload), headers=headers)
-            print(f"Ollama response status: {response}")
             response.raise_for_status()
+            print(f"Ollama response status: {response.json()}")
             response_data = response.json()
 
-            total_tokens = (
-                response_data["prompt_eval_count"] + response_data["eval_count"]
-            )
+
+            # total_tokens = (
+            #     response_data["prompt_eval_count"] + response_data["eval_count"]
+            # )
 
             if block:
-                block.update_metadata(llm_request_count=1, llm_tokens_used=total_tokens)
+                block.update_metadata(llm_request_count=1)
 
             data = response_data["response"]
             return json.loads(data)

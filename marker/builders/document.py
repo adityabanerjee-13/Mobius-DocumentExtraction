@@ -26,7 +26,7 @@ class DocumentBuilder(BaseBuilder):
     disable_ocr: Annotated[
         bool,
         "Disable OCR processing.",
-    ] = False
+    ] = True
 
     def __init__(self, config = None, **kwargs):
         super().__init__(config)
@@ -34,6 +34,9 @@ class DocumentBuilder(BaseBuilder):
             self.ignore_blocks = [BlockTypes[blk] for blk in kwargs['ignore_blocks']]
         else:
             self.ignore_blocks = []
+        
+        if config.get('ignore_before_TOC', False):
+            self.ignore_before_TOC = config['ignore_before_TOC']
 
     def __call__(self, provider: PdfProvider, layout_builder: LayoutBuilder, line_builder: LineBuilder, ocr_builder: OcrBuilder):
         document = self.build_document(provider)
@@ -48,17 +51,20 @@ class DocumentBuilder(BaseBuilder):
 
     def init_ignore(self, pages: List[PageGroup]):
         # Ignore blocks
-        for page in (pages):
+        for i, page in enumerate(pages):
             for block_id in page.structure:
                 block = page.get_block(block_id)
                 if block.block_type in self.ignore_blocks:
                     block.ignore_for_output = True
                     # In case of Table of Contents ignore the Page
                     if block.block_type == BlockTypes.TableOfContents:
+                        if self.ignore_before_TOC:
+                            for j in range(i):
+                                pages[j].ignore_for_output = True
                         page.ignore_for_output = True
                     break
         # Ignore blocks
-        for page in (pages):
+        for i, page in enumerate(pages):
             if page.ignore_for_output:
                 for block in page.children:
                     block.ignore_for_output = True

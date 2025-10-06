@@ -1,5 +1,5 @@
 import html
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Annotated, Tuple
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from marker.renderers.json import JSONRenderer, JSONBlockOutput
 from marker.schema.document import Document
 from marker.settings import settings
+from marker.renderers.markdown import cleanup_text, Markdownify
 
 
 class FlatBlockOutput(BaseModel):
@@ -75,6 +76,38 @@ def json_to_chunks(
 
 
 class ChunkRenderer(JSONRenderer):
+    page_separator: Annotated[
+        str, "The separator to use between pages.", "Default is '-' * 48."
+    ] = "-" * 48
+    inline_math_delimiters: Annotated[
+        Tuple[str], "The delimiters to use for inline math."
+    ] = ("$", "$")
+    block_math_delimiters: Annotated[
+        Tuple[str], "The delimiters to use for block math."
+    ] = ("$$", "$$")
+    paginate_output: Annotated[
+        bool,
+        "Whether to paginate the output.",
+    ] = False
+
+
+    @property
+    def md_cls(self):
+        return Markdownify(
+            self.paginate_output,
+            self.page_separator,
+            heading_style="ATX",
+            bullets="-",
+            escape_misc=False,
+            escape_underscores=True,
+            escape_asterisks=True,
+            escape_dollars=True,
+            sub_symbol="<sub>",
+            sup_symbol="<sup>",
+            inline_math_delimiters=self.inline_math_delimiters,
+            block_math_delimiters=self.block_math_delimiters,
+        )
+
     def __call__(self, document: Document) -> Optional[ChunkOutput|Dict[str, dict]]:
         document_output = document.render(self.block_config)
         json_output = []
@@ -90,22 +123,46 @@ class ChunkRenderer(JSONRenderer):
             page.page_id: {"bbox": page.polygon.bbox, "polygon": page.polygon.polygon}
             for page in document.pages
         }
-        out = {
-            "blocks": [chunk.model_dump() for chunk in chunk_output],
-            "page_info": page_info,
-        }
-        temp = {}
-        temp_imgs = {}
 
-        for block in out['blocks']:
-            temp_id = str(block['id']).split('/')
-            temp[str(block['id'])] = {
-                'block_type': temp_id[2],
-                'page': int(temp_id[-1]),
-                'html': block['html'],
-                'bbox': block['bbox'],
+        if self.output_json:
+            out = {
+                "blocks": [chunk.model_dump() for chunk in chunk_output],
+                "page_info": page_info,
             }
-            temp_imgs.update(block['images'] if block['images'] else {})
-        
+            temp = {}
+            temp_imgs = {}
 
-        return temp, temp_imgs, self.generate_document_metadata(document, document_output)
+            for block in out['blocks']:
+                temp_id = str(block['id']).split('/')
+                chunk_html = block['html']
+                markdown = self.md_cls.convert(chunk_html)
+                markdown = cleanup_text(markdown)
+
+                if markdown.strip() and temp_id[-2] in ['Text', 'SectionHeader', 'ListGroup']:  # Only include blocks with non-empty markdown
+                    temp[str(block['id'])] = {
+                        'page': int(temp_id[2]),
+                        'block_id': int(temp_id[-1]),
+                        'block_type': temp_id[-2],
+                        'html': chunk_html,
+                        'markdown': markdown,
+                        'bbox': block['bbox'],
+                    }
+                    temp_imgs.update(block['images'] if block['images'] else {})
+                elif not (temp_id[-2] in ['Text', 'SectionHeader', 'ListGroup']):
+                    temp[str(block['id'])] = {
+                        'page': int(temp_id[2]),
+                        'block_id': int(temp_id[-1]),
+                        'block_type': temp_id[-2],
+                        'html': chunk_html,
+                        'markdown': markdown,
+                        'bbox': block['bbox'],
+                    }
+                    temp_imgs.update(block['images'] if block['images'] else {})
+            return temp, temp_imgs, self.generate_document_metadata(document, document_output)
+        
+        else:
+            return ChunkOutput(
+                blocks=chunk_output,
+                page_info=page_info,
+                metadata=self.generate_document_metadata(document, document_output),
+            )

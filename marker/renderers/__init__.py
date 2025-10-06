@@ -15,6 +15,9 @@ from marker.util import assign_config
 
 
 class BaseRenderer:
+    output_json: Annotated[
+        bool, "Whether to output the rendered document as JSON."
+    ] = False
     image_blocks: Annotated[
         Tuple[BlockTypes, ...], "The block types to consider as images."
     ] = (BlockTypes.Picture, BlockTypes.Figure)

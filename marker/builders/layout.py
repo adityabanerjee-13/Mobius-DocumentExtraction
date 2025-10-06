@@ -169,21 +169,18 @@ class LayoutBuilder(BaseBuilder):
         for other_bbox in layout_result.bboxes:
             if other_bbox.label in ['SectionHeader'] and other_bbox.height < header_height:
                 # likely not a page header
-                print('Resolved PageHeader = SectionHeader issue, height = ', header_height)
                 bbox.label = 'SectionHeader'
                 bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
                 bbox.confidence = 1
                 break
             elif other_bbox.label in ['SectionHeader'] and abs(other_bbox.height - header_height) < 0.05*other_bbox.height:
                 # likely not a page header
-                print('Resolved PageHeader = SectionHeader issue, height = ', header_height)
                 bbox.label = 'SectionHeader'
                 bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
                 bbox.confidence = 1
                 break
             if other_bbox.label in ['PageFooter'] and abs(other_bbox.height-header_height) > 0.05*other_bbox.height:
                 # likely not a page header
-                print('Resolved PageHeader issue, height = ', header_height)
                 bbox.label = 'SectionHeader'
                 bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
                 bbox.confidence = 1
