@@ -28,6 +28,7 @@ class Document(BaseModel):
     block_type: BlockTypes = BlockTypes.Document
     table_of_contents: List[TocItem] | None = None
     debug_data_path: str | None = None  # Path that debug data was saved to
+    exclude_list: List[BlockTypes] = [BlockTypes.Span, BlockTypes.Line]  # List of block types to exclude from output
 
     def get_block(self, block_id: BlockId):
         page = self.get_page(block_id.page_id)
@@ -104,7 +105,6 @@ class Document(BaseModel):
             children=child_content,
             html=self.assemble_html(child_content, block_config),
         )
-        # print("Rendered document:", out)
         return out
 
     def contained_blocks(self, block_types: Sequence[BlockTypes] = None) -> List[Block]:
@@ -112,3 +112,14 @@ class Document(BaseModel):
         for page in self.pages:
             blocks += page.contained_blocks(self, block_types)
         return blocks
+
+    def get_all_chunks(self, block_type: list[BlockTypes] = []) -> List[str]:
+        all_chunks = []
+        for page in self.pages:
+            for block_id in page.structure:
+                if block_id in self.exclude_list:
+                    continue
+                block = page.get_block(block_id)
+                if block_type == [] or block.block_type in block_type:
+                    all_chunks.append(block)
+        return all_chunks

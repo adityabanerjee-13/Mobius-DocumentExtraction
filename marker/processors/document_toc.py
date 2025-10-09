@@ -157,7 +157,7 @@ class DocumentTOCProcessor(BaseProcessor):
             else:
                 out = []
                 page = document.get_page(info_obj)
-                for block in page.contained_blocks(document, list(self.block_types)+[BlockTypes.Text]):
+                for block in page.contained_blocks(document, list(self.block_types)):
                     text = block.raw_text(document).strip()
 
                     if not text: # empty text
@@ -268,11 +268,14 @@ class DocumentTOCProcessor(BaseProcessor):
                         level = max(0, parent_level + 1)
                 else:
                     level = block.heading_level
+                # level = block.heading_level
                 block.heading_level = level
                 toc.append({
                     "title": block.raw_text(document).strip(),
                     "heading_level": level,
                     "page_id": page.page_id,
-                    "polygon": block.polygon.polygon
+                    "bbox": block.polygon.bbox,
+                    "doc_toc_level": block.doc_toc_level,
+                    'line width': block.line_height(document)
                 })
         document.table_of_contents = toc

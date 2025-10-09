@@ -11,6 +11,7 @@ from surya.ocr_error import OCRErrorPredictor
 from marker.builders import BaseBuilder
 from marker.providers import ProviderOutput, ProviderPageLines
 from marker.providers.pdf import PdfProvider
+from marker.schema.blocks import PageHeader
 from marker.schema import BlockTypes
 from marker.schema.document import Document
 from marker.schema.groups.page import PageGroup
@@ -349,7 +350,7 @@ class LineBuilder(BaseBuilder):
         page_provider_lines: ProviderPageLines,
         page_ocr_lines: ProviderPageLines,
     ):
-        for document_page in document.pages:
+        for idx, document_page in enumerate(document.pages):
             provider_lines: List[ProviderOutput] = page_provider_lines[
                 document_page.page_id
             ]
@@ -360,10 +361,19 @@ class LineBuilder(BaseBuilder):
             merged_lines = self.filter_blank_lines(
                 document_page, provider_lines + ocr_lines
             )
-
             # Text extraction method is overridden later for OCRed documents
             document_page.merge_blocks(
                 merged_lines,
                 text_extraction_method="pdftext" if provider_lines else "surya",
                 keep_chars=self.keep_chars,
             )
+            # filter page headers
+            for block_id in document_page.children: 
+                if not block_id.block_type in [BlockTypes.PageHeader]:
+                    continue
+                PH_block: PageHeader = document_page.get_block(block_id)
+                if not PH_block.verify(document, document_page):
+                    # convert to section header
+                    section_header = PH_block.convert_to_sectionheader()
+                    document_page.replace_block(PH_block, section_header)
+                    

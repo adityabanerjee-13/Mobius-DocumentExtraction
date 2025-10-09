@@ -138,9 +138,6 @@ class LayoutBuilder(BaseBuilder):
                 layout_result.sliced
             )  # This indicates if the page was sliced by the layout model
             for idx, bbox in enumerate(sorted(layout_result.bboxes, key=lambda x: x.position)):
-                # resolving header issue
-                if idx==0 and bbox.label == 'PageHeader':
-                    self.resolve_header(bbox, layout_result)
 
                 block_cls = get_block_class(BlockTypes[bbox.label])
                 layout_block = page.add_block(
@@ -161,27 +158,3 @@ class LayoutBuilder(BaseBuilder):
             # Ensure page has non-empty children
             if page.children is None:
                 page.children = []
-
-    def resolve_header(self, bbox, layout_result):
-        # resolving page header issue
-        # compare bbox height with (SectionHeader,Text) height
-        header_height = bbox.height
-        for other_bbox in layout_result.bboxes:
-            if other_bbox.label in ['SectionHeader'] and other_bbox.height < header_height:
-                # likely not a page header
-                bbox.label = 'SectionHeader'
-                bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
-                bbox.confidence = 1
-                break
-            elif other_bbox.label in ['SectionHeader'] and abs(other_bbox.height - header_height) < 0.05*other_bbox.height:
-                # likely not a page header
-                bbox.label = 'SectionHeader'
-                bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
-                bbox.confidence = 1
-                break
-            if other_bbox.label in ['PageFooter'] and abs(other_bbox.height-header_height) > 0.05*other_bbox.height:
-                # likely not a page header
-                bbox.label = 'SectionHeader'
-                bbox.top_k = {'SectionHeader': 1, 'PageHeader': 0, 'ListItem': 0, 'Text': 0, 'Picture': 0}
-                bbox.confidence = 1
-                break

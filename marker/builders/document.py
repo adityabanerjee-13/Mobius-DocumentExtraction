@@ -57,7 +57,7 @@ class DocumentBuilder(BaseBuilder):
                 if block.block_type in self.ignore_blocks:
                     block.ignore_for_output = True
                     # In case of Table of Contents ignore the Page
-                    if block.block_type == BlockTypes.TableOfContents:
+                    if block.block_type == BlockTypes.TableOfContents and page.page_id <= 10:
                         if self.ignore_before_TOC:
                             for j in range(i):
                                 pages[j].ignore_for_output = True

@@ -273,4 +273,4 @@ class PdfConverter(BaseConverter):
             document = self.build_document(temp_path)
             self.page_count = len(document.pages)
             out_render = self.render_document(document)
-        return out_render
+        return out_render, document

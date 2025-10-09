@@ -14,7 +14,13 @@ app = FastAPI(title="PDF Parser API", description="Parse PDFs using Marker", ver
 
 
 class PDFParserConfig(BaseModel):
-    file_url: Annotated[str, Field(description="CDN URL of the PDF file to process", examples=["https://example.com/document.pdf"])]
+    file_url: Annotated[
+        str, 
+        Field(
+            description="CDN URL of the PDF file to process", 
+            examples=["https://example.com/document.pdf"]
+        )
+    ]
     optional_config: Annotated[
         Optional[dict], 
         Field(
