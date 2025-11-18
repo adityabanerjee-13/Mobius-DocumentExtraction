@@ -250,6 +250,7 @@ class DocumentTOCProcessor(BaseProcessor):
         return
 
     def __call__(self, document: Document):
+        document.verify_headers()
         toc_info = self.get_document_toc(document.filepath)
         toc_flag = False
         if toc_info:
@@ -268,7 +269,6 @@ class DocumentTOCProcessor(BaseProcessor):
                         level = max(0, parent_level + 1)
                 else:
                     level = block.heading_level
-                # level = block.heading_level
                 block.heading_level = level
                 toc.append({
                     "title": block.raw_text(document).strip(),

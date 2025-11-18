@@ -1,4 +1,7 @@
+import csv
 import os
+import re
+import json
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # disables a tokenizers warning
 
@@ -41,6 +44,7 @@ from marker.processors.block_relabel import BlockRelabelProcessor
 from marker.processors.blank_page import BlankPageProcessor
 from marker.processors.llm.llm_equation import LLMEquationProcessor
 from marker.renderers.page_markdown import PageMarkdownRenderer
+from marker.renderers.markdown import MarkdownRenderer, MarkdownOutput
 from marker.renderers.markdown import cleanup_text
 from marker.renderers import BaseRenderer
 from marker.schema.document import Document
@@ -65,6 +69,10 @@ def renderer2cls_loc(renderer: str) -> Optional[str|List[str]]:
         renderer = 'marker.renderers.markdown.MarkdownRenderer'
     elif renderer == 'chunks':
         renderer = 'marker.renderers.chunk.ChunkRenderer'
+    elif renderer == 'json':
+        renderer = 'marker.renderers.json.JSONRenderer'
+    elif renderer == 'html':
+        renderer = 'marker.renderers.html.HTMLRenderer'
     elif '+' in renderer:
         renderers = renderer.split('+')
         renderer = [renderer2cls_loc(r.strip()) for r in renderers]
@@ -72,6 +80,105 @@ def renderer2cls_loc(renderer: str) -> Optional[str|List[str]]:
         renderer = None
     return renderer
 
+def markdown_to_hierarchical_json(md_text):
+    lines = md_text.strip().splitlines()
+
+    # Root structure to hold everything
+    root = {"type": "root", "children": []}
+    stack = [root]  # stack to keep track of heading hierarchy
+    table_block = []  # to store detected table lines
+    in_table = False  # track table region
+
+    for line in lines:
+        line = line.rstrip()
+        if not line:
+            continue
+
+        # Detect start of table (line starts with |)
+        if line.strip().startswith("|"):
+            in_table = True
+            table_block.append(line)
+            continue
+        elif in_table and not line.strip().startswith("|"):
+            # end of table
+            csv_text = convert_table_to_csv(table_block)
+            table_node = {"type": "table", "csv": csv_text}
+            stack[-1]["children"].append(table_node)
+            table_block = []
+            in_table = False
+
+        if in_table:
+            continue  # skip rest of loop while collecting table lines
+
+        # Headings: #, ##, ###, etc.
+        heading_match = re.match(r'^(#{1,6})\s+(.*)', line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            heading_text = heading_match.group(2).strip()
+
+            node = {
+                "type": "section",
+                "level": level,
+                "heading": heading_text,
+                "children": []
+            }
+
+            while len(stack) > 1 and stack[-1]["level"] >= level:
+                stack.pop()
+
+            stack[-1]["children"].append(node)
+            stack.append(node)
+            continue
+
+        # Lists: - item
+        list_match = re.match(r'^\s*[-*+]\s+(.*)', line)
+        if list_match:
+            item_text = list_match.group(1).strip()
+            parent = stack[-1]
+            if not parent["children"] or parent["children"][-1]["type"] != "list":
+                parent["children"].append({"type": "list", "items": []})
+            parent["children"][-1]["items"].append(item_text)
+            continue
+
+        # Regular paragraph
+        parent = stack[-1]
+        parent["children"].append({
+            "type": "paragraph",
+            "text": line.strip()
+        })
+
+    # Handle case where file ends with table
+    if table_block:
+        csv_text = convert_table_to_csv(table_block)
+        table_node = {"type": "table", "csv": csv_text}
+        stack[-1]["children"].append(table_node)
+
+    return root["children"]
+
+def convert_table_to_csv(table_lines):
+    """Convert a Markdown table block into CSV text"""
+    clean_lines = [re.sub(r'\s*\|\s*$', '', line.strip()) for line in table_lines]
+    clean_lines = [line.strip("|") for line in clean_lines if line.strip()]
+
+    rows = []
+    for line in clean_lines:
+        parts = [re.sub(r'<br>', ' ', cell).strip() for cell in line.split("|")]
+        rows.append(parts)
+
+    # Remove separator (---|---|---)
+    rows = [r for r in rows if not all(set(c.strip()) <= {"-", ""} for c in r)]
+    if not rows:
+        return ""
+
+    header = rows[0]
+    data_rows = rows[1:]
+
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow(header)
+    for r in data_rows:
+        writer.writerow(r)
+    return csv_buffer.getvalue()
 
 class PdfConverter(BaseConverter):
     """
@@ -101,9 +208,9 @@ class PdfConverter(BaseConverter):
         IgnoreTextProcessor,
         LineNumbersProcessor,
         ListProcessor,
+        DocumentTOCProcessor,
         PageHeaderProcessor,
         SectionHeaderProcessor,
-        DocumentTOCProcessor,
         TableProcessor,
         # LLMTableProcessor,
         # LLMTableMergeProcessor,
@@ -240,6 +347,27 @@ class PdfConverter(BaseConverter):
             if isinstance(rendered, str):
                 rendered = cleanup_text(rendered)
             return "markdown", rendered, images, metadata
+        
+        elif renderer_cls.__name__ == "JSONRenderer":
+            renderer = self.resolve_dependencies(MarkdownRenderer)
+            out = renderer(document)
+            if isinstance(out, MarkdownOutput):
+                md = out.markdown
+                images = out.images
+                metadata = out.metadata
+            elif isinstance(out, dict) and 'markdown' in out:
+                md = out['markdown']
+                images = out.get('images', {})
+                metadata = out.get('metadata', {})
+            elif isinstance(out, tuple) and len(out) == 3:
+                md, images, metadata = out
+            else:
+                raise ValueError("Unexpected output from MarkdownRenderer for JSON conversion.")
+            md_json = markdown_to_hierarchical_json(md)
+            return 'json', md_json, images, metadata
+        
+        else:
+            raise ValueError(f"Unsupported renderer class: {renderer_cls.__name__}")
 
     def render_document(self, document: Document) -> Dict[str, Any]:
         out_render = {}

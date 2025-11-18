@@ -272,9 +272,8 @@ class LineBuilder(BaseBuilder):
                 intersection_matrix[i]
                 > self.provider_line_provider_line_min_overlap_pct
             )
-
             # There should be one intersection with itself
-            if intersect_counts > 2:
+            if intersect_counts > 3:
                 return False
 
         return True
